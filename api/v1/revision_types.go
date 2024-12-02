@@ -26,10 +26,8 @@ import (
 
 // RevisionTemplateSpec describes the data a revision should have when created from a template.
 type RevisionTemplateSpec struct {
-	// +kubebuilder:pruning:PreserveUnknownFields
-	// +optional
-	metav1.ObjectMeta `json:"metadata,omitempty"`
-
+	// Spec defines the desired state of the Revision.
+	// This field is optional.
 	// +optional
 	Spec RevisionSpec `json:"spec,omitempty"`
 }

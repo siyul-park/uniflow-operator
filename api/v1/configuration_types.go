@@ -23,11 +23,12 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// ConfigurationSpec defines the desired state of Configuration
+// ConfigurationSpec defines the desired state of a Configuration.
 type ConfigurationSpec struct {
-	// Template holds the latest specification for the Revision to be stamped out.
+	// Template contains the latest specification for the Revision to be created.
+	// This field is optional.
 	// +optional
-	Template RevisionTemplateSpec `json:"template"`
+	Template RevisionTemplateSpec `json:"template,omitempty"`
 }
 
 // ConfigurationStatus defines the observed state of Configuration
