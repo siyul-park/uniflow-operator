@@ -18,7 +18,14 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/json"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -46,10 +53,80 @@ type ServiceReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.18.4/pkg/reconcile
 func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
-	// TODO(user): your logic here
+	var service uniflowdevv1.Service
+	if err := r.Get(ctx, req.NamespacedName, &service); err != nil {
+		if errors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
+		logger.Error(err, "Failed to get Service")
+		return ctrl.Result{}, err
+	}
 
+	raw, err := json.Marshal(service.Spec.Template)
+	if err != nil {
+		logger.Error(err, "Failed to hash Template")
+		return ctrl.Result{}, err
+	}
+
+	hash := sha256.Sum256(raw)
+	revisionName := fmt.Sprintf("%s-%s", service.Name, hex.EncodeToString(hash[:8]))
+
+	var revision uniflowdevv1.Revision
+	if err := r.Get(ctx, types.NamespacedName{Name: revisionName, Namespace: service.Namespace}, &revision); err != nil {
+		if errors.IsNotFound(err) {
+			revision = uniflowdevv1.Revision{
+				ObjectMeta: metav1.ObjectMeta{
+					GenerateName: revisionName,
+					Namespace:    service.Namespace,
+					OwnerReferences: []metav1.OwnerReference{
+						{
+							APIVersion: service.APIVersion,
+							Kind:       service.Kind,
+							Name:       service.Name,
+							UID:        service.UID,
+						},
+					},
+				},
+				Spec: service.Spec.Template.Spec,
+			}
+			if err := r.Create(ctx, &revision); err != nil {
+				logger.Error(err, "Failed to create new Revision")
+				return ctrl.Result{}, err
+			}
+			logger.Info("Created new Revision", "RevisionName", revision.Name)
+		} else {
+			logger.Error(err, "Failed to get Revision")
+			return ctrl.Result{}, err
+		}
+	}
+
+	var revisionsList uniflowdevv1.RevisionList
+	if err := r.List(ctx, &revisionsList, client.InNamespace(service.Namespace)); err != nil {
+		logger.Error(err, "Failed to list Revisions")
+		return ctrl.Result{}, err
+	}
+
+	for _, rev := range revisionsList.Items {
+		isOwned := false
+		for _, owner := range rev.OwnerReferences {
+			if owner.UID == service.UID {
+				isOwned = true
+				break
+			}
+		}
+
+		if isOwned && rev.Name != revision.Name {
+			if err := r.Delete(ctx, &rev); err != nil {
+				logger.Error(err, "Failed to delete unused Revision", "RevisionName", rev.Name)
+				return ctrl.Result{}, err
+			}
+			logger.Info("Deleted unused Revision", "RevisionName", rev.Name)
+		}
+	}
+
+	logger.Info("Reconciliation complete", "RevisionName", revision.Name)
 	return ctrl.Result{}, nil
 }
 
