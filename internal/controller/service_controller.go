@@ -18,6 +18,9 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -46,10 +49,75 @@ type ServiceReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.18.4/pkg/reconcile
 func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
-	// TODO(user): your logic here
+	service := uniflowdevv1.Service{}
+	if err := r.Get(ctx, req.NamespacedName, &service); err != nil {
+		if errors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
+		logger.Error(err, "Failed to get Service")
+		return ctrl.Result{}, err
+	}
 
+	kinds, _, err := r.Scheme.ObjectKinds(&service)
+	if err != nil {
+		logger.Error(err, "Failed to get kinds for Service")
+		return ctrl.Result{}, err
+	}
+
+	if len(kinds) == 0 {
+		logger.Error(err, "No kinds found for Service")
+		return ctrl.Result{}, fmt.Errorf("no kinds found for service")
+	}
+
+	revision := uniflowdevv1.Revision{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: service.Name + "-rev-",
+			Namespace:    service.Namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: kinds[0].GroupVersion().String(),
+					Kind:       kinds[0].Kind,
+					Name:       service.Name,
+					UID:        service.UID,
+				},
+			},
+		},
+		Spec: service.Spec.Template.Spec,
+	}
+
+	if err := r.Create(ctx, &revision); err != nil {
+		logger.Error(err, "Failed to create new Revision")
+		return ctrl.Result{}, err
+	}
+	logger.Info("Created new Revision", "RevisionName", revision.Name)
+
+	var revisionsList uniflowdevv1.RevisionList
+	if err := r.List(ctx, &revisionsList, client.InNamespace(service.Namespace)); err != nil {
+		logger.Error(err, "Failed to list Revisions")
+		return ctrl.Result{}, err
+	}
+
+	for _, rev := range revisionsList.Items {
+		isOwned := false
+		for _, owner := range rev.OwnerReferences {
+			if owner.UID == service.UID {
+				isOwned = true
+				break
+			}
+		}
+
+		if isOwned && rev.Name != revision.Name {
+			if err := r.Delete(ctx, &rev); err != nil {
+				logger.Error(err, "Failed to delete unused Revision", "RevisionName", rev.Name)
+				return ctrl.Result{}, err
+			}
+			logger.Info("Deleted unused Revision", "RevisionName", rev.Name)
+		}
+	}
+
+	logger.Info("Reconciliation complete", "RevisionName", revision.Name)
 	return ctrl.Result{}, nil
 }
 

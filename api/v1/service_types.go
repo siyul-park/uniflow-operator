@@ -25,23 +25,16 @@ import (
 
 // ServiceSpec defines the desired state of Service
 type ServiceSpec struct {
-	// Template contains the latest specification for the Revision to be created.
-	// This field is optional.
-	// +optional
-	Template RevisionTemplateSpec `json:"template,omitempty"`
+	// Selector is a label query over pods that should match the replica set's pods.
+	// It must match the pod template's labels.
+	Selector *metav1.LabelSelector `json:"selector"`
+
+	// Template defines the pod template for creating new pods.
+	Template RevisionTemplateSpec `json:"template"`
 }
 
 // ServiceStatus defines the observed state of Service
 type ServiceStatus struct {
-	// LatestReadyRevisionName holds the name of the latest Revision stamped out
-	// from this Configuration that has had its "Ready" condition become "True".
-	// +optional
-	LatestReadyRevisionName string `json:"latestReadyRevisionName,omitempty"`
-
-	// LatestCreatedRevisionName is the last revision that was created from this
-	// Configuration. It might not be ready yet, for that use LatestReadyRevisionName.
-	// +optional
-	LatestCreatedRevisionName string `json:"latestCreatedRevisionName,omitempty"`
 }
 
 // +kubebuilder:object:root=true

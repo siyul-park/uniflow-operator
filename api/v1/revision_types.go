@@ -26,6 +26,11 @@ import (
 
 // RevisionTemplateSpec describes the data a revision should have when created from a template.
 type RevisionTemplateSpec struct {
+	// ObjectMeta contains the metadata for the revision object.
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	// +optional
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
 	// Spec defines the desired state of the Revision.
 	// This field is optional.
 	// +optional

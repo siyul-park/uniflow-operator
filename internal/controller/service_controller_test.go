@@ -18,11 +18,12 @@ package controller
 
 import (
 	"context"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -38,7 +39,7 @@ var _ = Describe("Service Controller", func() {
 
 		typeNamespacedName := types.NamespacedName{
 			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+			Namespace: "default",
 		}
 		service := &uniflowdevv1.Service{}
 
@@ -51,34 +52,60 @@ var _ = Describe("Service Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: uniflowdevv1.ServiceSpec{
+						Selector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								"env": "test",
+							},
+						},
+						Template: uniflowdevv1.RevisionTemplateSpec{
+							ObjectMeta: metav1.ObjectMeta{
+								Labels: map[string]string{
+									"env": "test",
+								},
+							},
+							Spec: uniflowdevv1.RevisionSpec{
+								PodSpec: corev1.PodSpec{
+									Containers: []corev1.Container{
+										{
+											Name:  "test-pod",
+											Image: "busybox",
+										},
+									},
+								},
+							},
+						},
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
 		})
 
 		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
-			resource := &uniflowdevv1.Service{}
-			err := k8sClient.Get(ctx, typeNamespacedName, resource)
+			service := &uniflowdevv1.Service{}
+			err := k8sClient.Get(ctx, typeNamespacedName, service)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Cleanup the specific resource instance Service")
-			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+			By("Cleanup the specific service instance Service")
+			Expect(k8sClient.Delete(ctx, service)).To(Succeed())
 		})
+
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
-			controllerReconciler := &ServiceReconciler{
+			reconciler := &ServiceReconciler{
 				Client: k8sClient,
 				Scheme: k8sClient.Scheme(),
 			}
 
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+
+			var revisionsList uniflowdevv1.RevisionList
+			err = k8sClient.List(ctx, &revisionsList, client.InNamespace(service.Namespace))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(revisionsList.Items).To(HaveLen(1))
 		})
 	})
 })
