@@ -1,0 +1,9 @@
+apiVersion: uniflow.dev/v1
+kind: Configuration
+metadata:
+  labels:
+    app.kubernetes.io/name: uniflow-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: configuration-sample
+spec:
+  # TODO(user): Add fields here

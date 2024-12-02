@@ -1,0 +1,23 @@
+# permissions for end users to view revisions.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: uniflow-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: revision-viewer-role
+rules:
+- apiGroups:
+  - uniflow.dev
+  resources:
+  - revisions
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - uniflow.dev
+  resources:
+  - revisions/status
+  verbs:
+  - get
