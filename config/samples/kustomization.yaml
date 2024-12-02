@@ -1,0 +1,7 @@
+## Append samples of your project ##
+resources:
+- v1_revision.yaml
+- _v1_revision.yaml
+- v1_service.yaml
+- _v1_service.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples
