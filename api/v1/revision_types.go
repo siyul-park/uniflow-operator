@@ -50,7 +50,8 @@ type RevisionSpec struct {
 
 // RevisionStatus defines the observed state of Revision
 type RevisionStatus struct {
-	Namespaces []string `json:"namespaces,omitempty"`
+	LastCreatedDeploymentName string `json:"lastCreatedDeploymentName,omitempty"`
+	LastCreatedServiceName    string `json:"lastCreatedServiceName,omitempty"`
 }
 
 // +kubebuilder:object:root=true

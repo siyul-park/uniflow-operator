@@ -22,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -65,38 +66,58 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		logger.Error(err, "Failed to get kinds for Service")
 		return ctrl.Result{}, err
 	}
-
 	if len(kinds) == 0 {
 		logger.Error(err, "No kinds found for Service")
-		return ctrl.Result{}, fmt.Errorf("no kinds found for service")
+		return ctrl.Result{}, fmt.Errorf("no kinds found for Service")
 	}
 
-	revision := uniflowdevv1.Revision{
-		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: service.Name + "-rev-",
-			Namespace:    service.Namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: kinds[0].GroupVersion().String(),
-					Kind:       kinds[0].Kind,
-					Name:       service.Name,
-					UID:        service.UID,
-				},
-			},
-		},
-		Spec: service.Spec.Template.Spec,
-	}
-
+	revision := r.createRevision(service, kinds[0])
 	if err := r.Create(ctx, &revision); err != nil {
 		logger.Error(err, "Failed to create new Revision")
 		return ctrl.Result{}, err
 	}
 	logger.Info("Created new Revision", "RevisionName", revision.Name)
 
+	service.Status.LastCreatedRevisionName = revision.Name
+	if err := r.Status().Update(ctx, &service); err != nil {
+		logger.Error(err, "Failed to update Service status")
+		return ctrl.Result{}, err
+	}
+
+	if err := r.cleanupRevisions(ctx, service); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	logger.Info("Reconciliation complete", "RevisionName", revision.Name)
+	return ctrl.Result{}, nil
+}
+
+// Helper method to create a new Revision from the Service
+func (r *ServiceReconciler) createRevision(service uniflowdevv1.Service, kind schema.GroupVersionKind) uniflowdevv1.Revision {
+	revision := uniflowdevv1.Revision{
+		ObjectMeta: service.Spec.Template.ObjectMeta,
+		Spec:       service.Spec.Template.Spec,
+	}
+
+	revision.GenerateName = service.Name + "-revision-"
+	revision.Namespace = service.Namespace
+	revision.OwnerReferences = []metav1.OwnerReference{
+		{
+			APIVersion: kind.GroupVersion().String(),
+			Kind:       kind.Kind,
+			Name:       service.Name,
+			UID:        service.UID,
+		},
+	}
+
+	return revision
+}
+
+// Helper method to clean up unused Revisions
+func (r *ServiceReconciler) cleanupRevisions(ctx context.Context, service uniflowdevv1.Service) error {
 	var revisionsList uniflowdevv1.RevisionList
 	if err := r.List(ctx, &revisionsList, client.InNamespace(service.Namespace)); err != nil {
-		logger.Error(err, "Failed to list Revisions")
-		return ctrl.Result{}, err
+		return err
 	}
 
 	for _, rev := range revisionsList.Items {
@@ -108,17 +129,14 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			}
 		}
 
-		if isOwned && rev.Name != revision.Name {
+		if isOwned && rev.Name != service.Status.LastCreatedRevisionName {
 			if err := r.Delete(ctx, &rev); err != nil {
-				logger.Error(err, "Failed to delete unused Revision", "RevisionName", rev.Name)
-				return ctrl.Result{}, err
+				return err
 			}
-			logger.Info("Deleted unused Revision", "RevisionName", rev.Name)
+			log.FromContext(ctx).Info("Deleted unused Revision", "RevisionName", rev.Name)
 		}
 	}
-
-	logger.Info("Reconciliation complete", "RevisionName", revision.Name)
-	return ctrl.Result{}, nil
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

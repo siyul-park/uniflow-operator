@@ -23,7 +23,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -53,11 +52,6 @@ var _ = Describe("Service Controller", func() {
 						Namespace: "default",
 					},
 					Spec: uniflowdevv1.ServiceSpec{
-						Selector: &metav1.LabelSelector{
-							MatchLabels: map[string]string{
-								"env": "test",
-							},
-						},
 						Template: uniflowdevv1.RevisionTemplateSpec{
 							ObjectMeta: metav1.ObjectMeta{
 								Labels: map[string]string{
@@ -102,10 +96,13 @@ var _ = Describe("Service Controller", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			var revisionsList uniflowdevv1.RevisionList
-			err = k8sClient.List(ctx, &revisionsList, client.InNamespace(service.Namespace))
+			service := &uniflowdevv1.Service{}
+			err = k8sClient.Get(ctx, typeNamespacedName, service)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(revisionsList.Items).To(HaveLen(1))
+
+			revision := uniflowdevv1.Revision{}
+			err = k8sClient.Get(ctx, types.NamespacedName{Namespace: service.Namespace, Name: service.Status.LastCreatedRevisionName}, &revision)
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 })

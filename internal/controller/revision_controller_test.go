@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -78,14 +79,26 @@ var _ = Describe("Revision Controller", func() {
 
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
-			controllerReconciler := &RevisionReconciler{
+			reconciler := &RevisionReconciler{
 				Client: k8sClient,
 				Scheme: k8sClient.Scheme(),
 			}
 
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
 			})
+			Expect(err).NotTo(HaveOccurred())
+
+			revision := &uniflowdevv1.Revision{}
+			err = k8sClient.Get(ctx, typeNamespacedName, revision)
+			Expect(err).NotTo(HaveOccurred())
+
+			var deployment appsv1.Deployment
+			err = k8sClient.Get(ctx, types.NamespacedName{Namespace: revision.Namespace, Name: revision.Status.LastCreatedDeploymentName}, &deployment)
+			Expect(err).NotTo(HaveOccurred())
+
+			var service corev1.Service
+			err = k8sClient.Get(ctx, types.NamespacedName{Namespace: revision.Namespace, Name: revision.Status.LastCreatedServiceName}, &service)
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})

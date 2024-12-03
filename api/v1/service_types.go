@@ -25,16 +25,13 @@ import (
 
 // ServiceSpec defines the desired state of Service
 type ServiceSpec struct {
-	// Selector is a label query over pods that should match the replica set's pods.
-	// It must match the pod template's labels.
-	Selector *metav1.LabelSelector `json:"selector"`
-
 	// Template defines the pod template for creating new pods.
 	Template RevisionTemplateSpec `json:"template"`
 }
 
 // ServiceStatus defines the observed state of Service
 type ServiceStatus struct {
+	LastCreatedRevisionName string `json:"LastCreatedRevisionName,omitempty"`
 }
 
 // +kubebuilder:object:root=true

@@ -8032,10 +8032,10 @@ spec:
           status:
             description: RevisionStatus defines the observed state of Revision
             properties:
-              namespaces:
-                items:
-                  type: string
-                type: array
+              lastCreatedDeploymentName:
+                type: string
+              lastCreatedServiceName:
+                type: string
             type: object
         type: object
     served: true
