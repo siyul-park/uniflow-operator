@@ -19,25 +19,62 @@ package controller
 import (
 	"context"
 	"fmt"
+	"time"
+
+	uniflowdevv1 "github.com/siyul-park/uniflow-operator/api/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-
-	uniflowdevv1 "github.com/siyul-park/uniflow-operator/api/v1"
 )
 
 // RevisionReconciler reconciles a Revision object
 type RevisionReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme          *runtime.Scheme
+	specReconcilers map[types.NamespacedName]*SpecReconciler
+}
+
+func (r *RevisionReconciler) Load(ctx context.Context) error {
+	logger := log.FromContext(ctx)
+
+	var revisionList uniflowdevv1.RevisionList
+	if err := r.List(ctx, &revisionList); err != nil {
+		logger.Error(err, "Failed to list revisions")
+		return err
+	}
+
+	for _, rev := range revisionList.Items {
+		if err := r.listen(rev); err != nil {
+			logger.Error(err, "Failed to listen")
+			return err
+		}
+	}
+	for namespacedName, specReconciler := range r.specReconcilers {
+		exists := false
+		for _, rev := range revisionList.Items {
+			if (types.NamespacedName{Namespace: rev.Namespace, Name: rev.Name}) == namespacedName {
+				exists = true
+				break
+			}
+		}
+
+		if !exists {
+			delete(r.specReconcilers, namespacedName)
+			if err := specReconciler.Close(); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 // +kubebuilder:rbac:groups=uniflow.dev,resources=revisions,verbs=get;list;watch;create;update;patch;delete
@@ -65,13 +102,12 @@ func (r *RevisionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	kinds, _, err := r.Scheme.ObjectKinds(&revision)
-	if err != nil || len(kinds) == 0 {
-		logger.Error(err, "Failed to get kinds for Revision")
-		return ctrl.Result{}, fmt.Errorf("no kinds found for Revision")
+	deployment, err := r.createDeployment(revision)
+	if err != nil {
+		logger.Error(err, "Failed to create Deployment")
+		return ctrl.Result{}, err
 	}
 
-	deployment := r.createDeployment(revision, kinds[0])
 	if err := r.Create(ctx, &deployment); err != nil {
 		logger.Error(err, "Failed to create Deployment", "DeploymentName", deployment.Name)
 		return ctrl.Result{}, err
@@ -87,7 +123,12 @@ func (r *RevisionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	service := r.createService(revision, kinds[0])
+	service, err := r.createService(revision)
+	if err != nil {
+		logger.Error(err, "Failed to create Service")
+		return ctrl.Result{}, err
+	}
+
 	if err := r.Create(ctx, &service); err != nil {
 		logger.Error(err, "Failed to create Service", "ServiceName", service.Name)
 		return ctrl.Result{}, err
@@ -105,10 +146,19 @@ func (r *RevisionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	logger.Info("Created new Deployment and Service", "DeploymentName", deployment.Name, "ServiceName", service.Name)
 
+	if err := r.listen(revision); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	return ctrl.Result{}, nil
 }
 
-func (r *RevisionReconciler) createDeployment(revision uniflowdevv1.Revision, kind schema.GroupVersionKind) appsv1.Deployment {
+func (r *RevisionReconciler) createDeployment(revision uniflowdevv1.Revision) (appsv1.Deployment, error) {
+	kinds, _, err := r.Scheme.ObjectKinds(&revision)
+	if err != nil || len(kinds) == 0 {
+		return appsv1.Deployment{}, fmt.Errorf("no kinds found for Revision")
+	}
+
 	containers := make([]corev1.Container, len(revision.Spec.Containers))
 	for i, container := range revision.Spec.Containers {
 		container.Args = append(container.Args, "--namespace", "system", "--env", "PORT=8000")
@@ -120,54 +170,67 @@ func (r *RevisionReconciler) createDeployment(revision uniflowdevv1.Revision, ki
 
 	return appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: revision.Name + "-svc-system-",
+			GenerateName: revision.Name + "-deployment-system",
 			Namespace:    revision.Namespace,
 			OwnerReferences: []metav1.OwnerReference{
 				{
-					APIVersion: kind.GroupVersion().String(),
-					Kind:       kind.Kind,
+					APIVersion: kinds[0].GroupVersion().String(),
+					Kind:       kinds[0].Kind,
 					Name:       revision.Name,
 					UID:        revision.UID,
 				},
 			},
+			Labels: map[string]string{
+				"app.kubernetes.io/part-of":  kinds[0].Group + "-" + revision.Name,
+				"app.kubernetes.io/instance": kinds[0].Group + "-" + revision.Name + "-system",
+			},
 		},
 		Spec: appsv1.DeploymentSpec{
-			Replicas: pointer.Int32(1),
+			Replicas: ptr.To(int32(1)),
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"app.kubernetes.io/instance": kind.Group + "-" + revision.Name + "-system",
+					"app.kubernetes.io/instance": kinds[0].Group + "-" + revision.Name + "-system",
 				},
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						"app.kubernetes.io/part-of":  kind.Group + "-" + revision.Name,
-						"app.kubernetes.io/instance": kind.Group + "-" + revision.Name + "-system",
+						"app.kubernetes.io/part-of":  kinds[0].Group + "-" + revision.Name,
+						"app.kubernetes.io/instance": kinds[0].Group + "-" + revision.Name + "-system",
 					},
 				},
 				Spec: podSpec,
 			},
 		},
-	}
+	}, nil
 }
 
-func (r *RevisionReconciler) createService(revision uniflowdevv1.Revision, kind schema.GroupVersionKind) corev1.Service {
+func (r *RevisionReconciler) createService(revision uniflowdevv1.Revision) (corev1.Service, error) {
+	kinds, _, err := r.Scheme.ObjectKinds(&revision)
+	if err != nil || len(kinds) == 0 {
+		return corev1.Service{}, fmt.Errorf("no kinds found for Revision")
+	}
+
 	return corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: revision.Name + "-service-system-",
+			GenerateName: revision.Name + "-service-system",
 			Namespace:    revision.Namespace,
 			OwnerReferences: []metav1.OwnerReference{
 				{
-					APIVersion: kind.GroupVersion().String(),
-					Kind:       kind.Kind,
+					APIVersion: kinds[0].GroupVersion().String(),
+					Kind:       kinds[0].Kind,
 					Name:       revision.Name,
 					UID:        revision.UID,
 				},
 			},
+			Labels: map[string]string{
+				"app.kubernetes.io/part-of":  kinds[0].Group + "-" + revision.Name,
+				"app.kubernetes.io/instance": kinds[0].Group + "-" + revision.Name + "-system",
+			},
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{
-				"app.kubernetes.io/instance": kind.Group + "-" + revision.Name + "-system",
+				"app.kubernetes.io/instance": kinds[0].Group + "-" + revision.Name + "-system",
 			},
 			Ports: []corev1.ServicePort{
 				{
@@ -177,7 +240,7 @@ func (r *RevisionReconciler) createService(revision uniflowdevv1.Revision, kind 
 			},
 			Type: corev1.ServiceTypeClusterIP,
 		},
-	}
+	}, nil
 }
 
 // Helper method to clean up unused deployments
@@ -229,6 +292,49 @@ func (r *RevisionReconciler) cleanupServices(ctx context.Context, revision unifl
 			log.FromContext(ctx).Info("Deleted unused Service", "ServiceName", svc.Name)
 		}
 	}
+	return nil
+}
+
+func (r *RevisionReconciler) listen(revision uniflowdevv1.Revision) error {
+	namespacedName := types.NamespacedName{Namespace: revision.Namespace, Name: revision.Name}
+
+	if r.specReconcilers == nil {
+		r.specReconcilers = make(map[types.NamespacedName]*SpecReconciler)
+	}
+
+	specReconciler, ok := r.specReconcilers[namespacedName]
+	if !ok {
+		specReconciler = &SpecReconciler{
+			Client:         r.Client,
+			Scheme:         r.Scheme,
+			NamespacedName: namespacedName,
+		}
+		r.specReconcilers[namespacedName] = specReconciler
+
+		go func() {
+			ctx := context.Background()
+
+			ticker := time.NewTicker(time.Second)
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-ticker.C:
+					_ = specReconciler.Listen(ctx)
+				case <-specReconciler.Done():
+					return
+				}
+			}
+		}()
+	}
+
+	if revision.DeletionTimestamp != nil {
+		delete(r.specReconcilers, namespacedName)
+		if err := specReconciler.Close(); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 

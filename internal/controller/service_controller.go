@@ -19,10 +19,10 @@ package controller
 import (
 	"context"
 	"fmt"
+
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -61,17 +61,12 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
-	kinds, _, err := r.Scheme.ObjectKinds(&service)
+	revision, err := r.createRevision(service)
 	if err != nil {
-		logger.Error(err, "Failed to get kinds for Service")
+		logger.Error(err, "Failed to create revision")
 		return ctrl.Result{}, err
 	}
-	if len(kinds) == 0 {
-		logger.Error(err, "No kinds found for Service")
-		return ctrl.Result{}, fmt.Errorf("no kinds found for Service")
-	}
 
-	revision := r.createRevision(service, kinds[0])
 	if err := r.Create(ctx, &revision); err != nil {
 		logger.Error(err, "Failed to create new Revision")
 		return ctrl.Result{}, err
@@ -93,7 +88,12 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 }
 
 // Helper method to create a new Revision from the Service
-func (r *ServiceReconciler) createRevision(service uniflowdevv1.Service, kind schema.GroupVersionKind) uniflowdevv1.Revision {
+func (r *ServiceReconciler) createRevision(service uniflowdevv1.Service) (uniflowdevv1.Revision, error) {
+	kinds, _, err := r.Scheme.ObjectKinds(&service)
+	if err != nil || len(kinds) == 0 {
+		return uniflowdevv1.Revision{}, fmt.Errorf("no kinds found for Service")
+	}
+
 	revision := uniflowdevv1.Revision{
 		ObjectMeta: service.Spec.Template.ObjectMeta,
 		Spec:       service.Spec.Template.Spec,
@@ -103,14 +103,14 @@ func (r *ServiceReconciler) createRevision(service uniflowdevv1.Service, kind sc
 	revision.Namespace = service.Namespace
 	revision.OwnerReferences = []metav1.OwnerReference{
 		{
-			APIVersion: kind.GroupVersion().String(),
-			Kind:       kind.Kind,
+			APIVersion: kinds[0].GroupVersion().String(),
+			Kind:       kinds[0].Kind,
 			Name:       service.Name,
 			UID:        service.UID,
 		},
 	}
 
-	return revision
+	return revision, nil
 }
 
 // Helper method to clean up unused Revisions

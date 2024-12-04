@@ -41,17 +41,13 @@ type RevisionTemplateSpec struct {
 type RevisionSpec struct {
 	// Embeds the PodSpec to inherit container specifications.
 	corev1.PodSpec `json:",inline"`
-
-	// WatchProbe specifies the probe configuration for monitoring the revision.
-	// This is not allowed for ephemeral containers.
-	// +optional
-	WatchProbe *corev1.Probe `json:"watchProbe,omitempty"`
 }
 
 // RevisionStatus defines the observed state of Revision
 type RevisionStatus struct {
-	LastCreatedDeploymentName string `json:"lastCreatedDeploymentName,omitempty"`
-	LastCreatedServiceName    string `json:"lastCreatedServiceName,omitempty"`
+	LastCreatedDeploymentName string            `json:"lastCreatedDeploymentName,omitempty"`
+	LastCreatedServiceName    string            `json:"lastCreatedServiceName,omitempty"`
+	LastCreatedServingNames   map[string]string `json:"LastCreatedServingNames,omitempty"`
 }
 
 // +kubebuilder:object:root=true
