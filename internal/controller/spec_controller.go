@@ -1,257 +1,162 @@
-package controller
+# **Uniflow Operator**
 
-import (
-	"context"
-	"fmt"
-	"slices"
-	"sync"
+The **Uniflow Operator** is a Kubernetes controller designed for managing `Service` and `Revision` resources. It tracks workflow changes and ensures seamless deployment of serverless workloads using Knative. This operator simplifies the orchestration and versioning of workflows in dynamic environments.
 
-	"github.com/google/uuid"
-	uniflowdevv1 "github.com/siyul-park/uniflow-operator/api/v1"
-	"github.com/siyul-park/uniflow-operator/internal/spec"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
-	servingv1 "knative.dev/serving/pkg/apis/serving/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
-)
+---
 
-const ClusterLocalDNSFormat = "%s.%s.svc.cluster.local:%s"
+## **Features**
 
-// SpecReconciler manages the synchronization of revision services and stream events.
-type SpecReconciler struct {
-	client.Client
-	Scheme         *runtime.Scheme
-	NamespacedName types.NamespacedName
-	namespaces     map[uuid.UUID]string
-	done           chan struct{}
-	mu             sync.Mutex
-}
+### **Dynamic Revision Management**
+- Automatically creates and manages `Revision` resources based on `Service` updates.
+- Supports version control for services and workflows.
 
-// Listen processes events from the stream and reconciles states.
-func (r *SpecReconciler) Listen(ctx context.Context) error {
-	logger := log.FromContext(ctx)
+### **Efficient Resource Cleanup**
+- Automatically removes outdated `Revisions` while retaining the latest version.
+- Ensures optimal resource utilization.
 
-	stream, err := r.start(ctx)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = stream.Close() }()
+### **Knative Integration**
+- Leverages Knative Serving to provide serverless deployment for workflows.
+- Supports real-time and scalable workload management.
 
-	var queue []uuid.UUID
-	for {
-		select {
-		case <-r.Done():
-			return nil
-		case event, ok := <-stream.Next():
-			if !ok {
-				return nil
-			}
-			queue = append(queue, event.ID)
+### **Event-Driven Reconciliation**
+- Listens to workflow changes and dynamically updates Kubernetes resources.
+- Ensures system state aligns with user-defined specifications.
 
-			for i := 0; i < len(queue); i++ {
-				if err := r.Reconcile(ctx, queue[i]); err == nil {
-					queue = append(queue[:i], queue[i+1:]...)
-					i--
-				} else {
-					logger.Error(err, "Failed to reconcile event", "eventID", queue[i])
-				}
-			}
-		}
-	}
-}
+---
 
-// Reconcile reconciles state and updates namespaces.
-func (r *SpecReconciler) Reconcile(ctx context.Context, id uuid.UUID) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+## **Getting Started**
 
-	logger := log.FromContext(ctx)
+### **Prerequisites**
 
-	var revision uniflowdevv1.Revision
-	if err := r.Get(ctx, r.NamespacedName, &revision); err != nil {
-		logger.Error(err, "Failed to get Revision")
-		return err
-	}
+- Kubernetes 1.24 or later
+- Knative Serving installed
+- Helm 3 (optional for installation)
 
-	service := &corev1.Service{}
-	if err := r.Get(ctx, types.NamespacedName{Namespace: revision.Namespace, Name: revision.Status.LastCreatedServiceName}, service); err != nil {
-		logger.Error(err, "Failed to get Service")
-		return err
-	}
+---
 
-	store := spec.NewStore(fmt.Sprintf(ClusterLocalDNSFormat, service.Name, service.Namespace, service.Spec.ClusterIP))
+## **Installation**
 
-	specs, err := store.Load(ctx, &spec.Meta{ID: id})
-	if err != nil {
-		logger.Error(err, "Failed to load spec")
-		return err
-	}
+### **1. Clone the Repository**
+```bash
+git clone https://github.com/siyul-park/uniflow-operator.git
+cd uniflow-operator
+```
 
-	delete(r.namespaces, id)
-	for _, spc := range specs {
-		r.namespaces[spc.GetID()] = spc.GetNamespace()
-	}
+### **2. Deploy Custom Resource Definitions (CRDs)**
+```bash
+kubectl apply -f config/crd/bases
+```
 
-	return r.reflectService(ctx, revision)
-}
+### **3. Deploy the Controller**
+```bash
+kubectl apply -f config/manager
+```
 
-// Done returns the completion signal channel.
-func (r *SpecReconciler) Done() <-chan struct{} {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+### **4. Verify Deployment**
+```bash
+kubectl get pods -n uniflow-system
+```
 
-	done := r.done
-	if done == nil {
-		done = make(chan struct{})
-		r.done = done
-	}
-	return done
-}
+---
 
-// Close shuts down the reconciler and releases resources.
-func (r *SpecReconciler) Close() error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+## **Usage**
 
-	if r.done == nil {
-		return nil
-	}
+### **Define a Service**
 
-	select {
-	case <-r.done:
-	default:
-		close(r.done)
-	}
-	return nil
-}
+Create a `Service` manifest:
+```yaml
+apiVersion: uniflow.dev/v1
+kind: Service
+metadata:
+  name: example-service
+spec:
+  template:
+    metadata:
+      labels:
+        app: example
+    spec:
+      containers:
+        - name: example-container
+          image: example-image:latest
+```
 
-// start initializes services and starts the stream.
-func (r *SpecReconciler) start(ctx context.Context) (*spec.Stream, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+Apply the configuration:
+```bash
+kubectl apply -f service.yaml
+```
 
-	logger := log.FromContext(ctx)
+### **Monitor Revisions**
 
-	var revision uniflowdevv1.Revision
-	if err := r.Get(ctx, r.NamespacedName, &revision); err != nil {
-		logger.Error(err, "Failed to get Revision")
-		return nil, err
-	}
+Check created `Revisions`:
+```bash
+kubectl get revisions -n <namespace>
+```
 
-	var service corev1.Service
-	if err := r.Get(ctx, types.NamespacedName{Namespace: revision.Namespace, Name: revision.Status.LastCreatedServiceName}, &service); err != nil {
-		logger.Error(err, "Failed to get Service")
-		return nil, err
-	}
+Inspect `Service` status:
+```bash
+kubectl describe service example-service
+```
 
-	store := spec.NewStore(fmt.Sprintf(ClusterLocalDNSFormat, service.Name, service.Namespace, service.Spec.ClusterIP))
-	stream, err := store.Watch(ctx)
-	if err != nil {
-		logger.Error(err, "Failed to watch stream")
-		return nil, err
-	}
+---
 
-	specs, err := store.Load(ctx)
-	if err != nil {
-		logger.Error(err, "Failed to load specs")
-		return nil, err
-	}
+## **Development**
 
-	r.namespaces = make(map[uuid.UUID]string)
-	for _, spc := range specs {
-		r.namespaces[spc.GetID()] = spc.GetNamespace()
-	}
+### **Local Development**
 
-	if err := r.reflectService(ctx, revision); err != nil {
-		logger.Error(err, "Failed to setup services")
-		return nil, err
-	}
+1. **Install Dependencies**
+   ```bash
+   go mod tidy
+   ```
 
-	return stream, nil
-}
+2. **Run the Controller**
+   ```bash
+   make run
+   ```
 
-// reflectService manages service setup and cleanup.
-func (r *SpecReconciler) reflectService(ctx context.Context, revision uniflowdevv1.Revision) error {
-	var namespaces []string
-	for _, namespace := range r.namespaces {
-		if !slices.Contains(namespaces, namespace) {
-			namespaces = append(namespaces, namespace)
-		}
-	}
+3. **Apply Resources Locally**
+   ```bash
+   kubectl apply -f examples/service.yaml
+   ```
 
-	for _, namespace := range namespaces {
-		if _, ok := revision.Status.LastCreatedServingNames[namespace]; ok {
-			continue
-		}
+### **Run Tests**
+```bash
+make test
+```
 
-		service, err := r.createService(revision, namespace)
-		if err != nil {
-			return err
-		}
-		if err := r.Client.Create(ctx, &service); err != nil {
-			return err
-		}
+---
 
-		revision.Status.LastCreatedServingNames[namespace] = service.Name
-	}
+## **Contributing**
 
-	for namespace, serviceName := range revision.Status.LastCreatedServingNames {
-		if !slices.Contains(namespaces, namespace) {
-			var service servingv1.Service
-			if err := r.Get(ctx, types.NamespacedName{Namespace: revision.Namespace, Name: serviceName}, &service); err == nil {
-				if err := r.Client.Delete(ctx, &service); err != nil {
-					return err
-				}
-			}
-			delete(revision.Status.LastCreatedServingNames, namespace)
-		}
-	}
+### **Steps to Contribute**
+1. Fork the repository.
+2. Create a feature branch:
+   ```bash
+   git checkout -b feature/my-feature
+   ```
+3. Commit your changes:
+   ```bash
+   git commit -m "Add my feature"
+   ```
+4. Push the branch:
+   ```bash
+   git push origin feature/my-feature
+   ```
+5. Create a pull request in the repository.
 
-	return r.Client.Update(ctx, &revision)
-}
+### **Code Standards**
+- Follow the [Go Code Style](https://golang.org/doc/effective_go.html).
+- Write tests for new features.
+- Ensure code passes `golangci-lint` checks.
 
-// createService generates a new service based on the revision and namespace.
-func (r *SpecReconciler) createService(revision uniflowdevv1.Revision, namespace string) (servingv1.Service, error) {
-	kinds, _, err := r.Scheme.ObjectKinds(&revision)
-	if err != nil || len(kinds) == 0 {
-		return servingv1.Service{}, fmt.Errorf("no kinds found for Service")
-	}
+---
 
-	containers := make([]corev1.Container, len(revision.Spec.Containers))
-	for i, container := range revision.Spec.Containers {
-		container.Args = append(container.Args, "--namespace", namespace, "--env", "PORT=$(PORT)")
-		containers[i] = container
-	}
+## **License**
 
-	podSpec := revision.Spec.PodSpec
-	podSpec.Containers = containers
+This project is licensed under the [Apache License 2.0](LICENSE).
 
-	return servingv1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: fmt.Sprintf("%s-serving-%s", revision.Name, namespace),
-			Namespace:    revision.Namespace,
-			Labels: map[string]string{
-				"app.kubernetes.io/part-of":  kinds[0].Group + "-" + revision.Name,
-				"app.kubernetes.io/instance": kinds[0].Group + "-" + revision.Name + "-" + namespace,
-			},
-		},
-		Spec: servingv1.ServiceSpec{
-			ConfigurationSpec: servingv1.ConfigurationSpec{
-				Template: servingv1.RevisionTemplateSpec{
-					ObjectMeta: metav1.ObjectMeta{
-						Labels: map[string]string{
-							"app.kubernetes.io/part-of":  kinds[0].Group + "-" + revision.Name,
-							"app.kubernetes.io/instance": kinds[0].Group + "-" + revision.Name + "-" + namespace,
-						},
-					},
-					Spec: servingv1.RevisionSpec{
-						PodSpec: podSpec,
-					},
-				},
-			},
-		},
-	}, nil
-}
+---
+
+## **Contact**
+
+For questions or issues, please open an issue in the [GitHub repository](https://github.com/siyul-park/uniflow-operator/issues).
+	
