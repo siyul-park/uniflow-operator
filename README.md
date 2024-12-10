@@ -1,62 +1,70 @@
-Uniflow Operator
+# **Uniflow Operator**
 
-The Uniflow Operator is a Kubernetes controller designed for managing Service and Revision resources. It tracks workflow changes and ensures seamless deployment of serverless workloads using Knative. This operator simplifies the orchestration and versioning of workflows in dynamic environments.
+The **Uniflow Operator** is a Kubernetes controller designed for managing `Service` and `Revision` resources. It tracks workflow changes and ensures seamless deployment of serverless workloads using Knative. This operator simplifies the orchestration and versioning of workflows in dynamic environments.
 
-Features
+---
 
-Dynamic Revision Management
+## **Features**
 
-	•	Automatically creates and manages Revision resources based on Service updates.
-	•	Supports version control for services and workflows.
+### **Dynamic Revision Management**
+- Automatically creates and manages `Revision` resources based on `Service` updates.
+- Supports version control for services and workflows.
 
-Efficient Resource Cleanup
+### **Efficient Resource Cleanup**
+- Automatically removes outdated `Revisions` while retaining the latest version.
+- Ensures optimal resource utilization.
 
-	•	Automatically removes outdated Revisions while retaining the latest version.
-	•	Ensures optimal resource utilization.
+### **Knative Integration**
+- Leverages Knative Serving to provide serverless deployment for workflows.
+- Supports real-time and scalable workload management.
 
-Knative Integration
+### **Event-Driven Reconciliation**
+- Listens to workflow changes and dynamically updates Kubernetes resources.
+- Ensures system state aligns with user-defined specifications.
 
-	•	Leverages Knative Serving to provide serverless deployment for workflows.
-	•	Supports real-time and scalable workload management.
+---
 
-Event-Driven Reconciliation
+## **Getting Started**
 
-	•	Listens to workflow changes and dynamically updates Kubernetes resources.
-	•	Ensures system state aligns with user-defined specifications.
+### **Prerequisites**
 
-Getting Started
+- Kubernetes 1.24 or later
+- Knative Serving installed
+- Helm 3 (optional for installation)
 
-Prerequisites
+---
 
-	•	Kubernetes 1.24 or later
-	•	Knative Serving installed
-	•	Helm 3 (optional for installation)
+## **Installation**
 
-Installation
-
-1. Clone the Repository
-
+### **1. Clone the Repository**
+```bash
 git clone https://github.com/siyul-park/uniflow-operator.git
 cd uniflow-operator
+```
 
-2. Deploy Custom Resource Definitions (CRDs)
-
+### **2. Deploy Custom Resource Definitions (CRDs)**
+```bash
 kubectl apply -f config/crd/bases
+```
 
-3. Deploy the Controller
-
+### **3. Deploy the Controller**
+```bash
 kubectl apply -f config/manager
+```
 
-4. Verify Deployment
-
+### **4. Verify Deployment**
+```bash
 kubectl get pods -n uniflow-system
+```
 
-Usage
+---
 
-Define a Service
+## **Usage**
 
-Create a Service manifest:
+### **Define a Service**
 
+Create a `Service` manifest:
+```yaml
 apiVersion: uniflow.dev/v1
 kind: Service
 metadata:
@@ -70,77 +78,84 @@ spec:
       containers:
         - name: example-container
           image: example-image:latest
+```
 
 Apply the configuration:
-
+```bash
 kubectl apply -f service.yaml
+```
 
-Monitor Revisions
+### **Monitor Revisions**
 
-Check created Revisions:
-
+Check created `Revisions`:
+```bash
 kubectl get revisions -n <namespace>
+```
 
-Inspect Service status:
-
+Inspect `Service` status:
+```bash
 kubectl describe service example-service
+```
 
-Development
+---
 
-Local Development
+## **Development**
 
-	1.	Install Dependencies
+### **Local Development**
 
-go mod tidy
+1. **Install Dependencies**
+   ```bash
+   go mod tidy
+   ```
 
+2. **Run the Controller**
+   ```bash
+   make run
+   ```
 
-	2.	Run the Controller
+3. **Apply Resources Locally**
+   ```bash
+   kubectl apply -f examples/service.yaml
+   ```
 
-make run
-
-
-	3.	Apply Resources Locally
-
-kubectl apply -f examples/service.yaml
-
-
-
-Run Tests
-
+### **Run Tests**
+```bash
 make test
+```
 
-Contributing
+---
 
-Steps to Contribute
+## **Contributing**
 
-	1.	Fork the repository.
-	2.	Create a feature branch:
+### **Steps to Contribute**
+1. Fork the repository.
+2. Create a feature branch:
+   ```bash
+   git checkout -b feature/my-feature
+   ```
+3. Commit your changes:
+   ```bash
+   git commit -m "Add my feature"
+   ```
+4. Push the branch:
+   ```bash
+   git push origin feature/my-feature
+   ```
+5. Create a pull request in the repository.
 
-git checkout -b feature/my-feature
+### **Code Standards**
+- Follow the [Go Code Style](https://golang.org/doc/effective_go.html).
+- Write tests for new features.
+- Ensure code passes `golangci-lint` checks.
 
+---
 
-	3.	Commit your changes:
+## **License**
 
-git commit -m "Add my feature"
+This project is licensed under the [Apache License 2.0](LICENSE).
 
+---
 
-	4.	Push the branch:
+## **Contact**
 
-git push origin feature/my-feature
-
-
-	5.	Create a pull request in the repository.
-
-Code Standards
-
-	•	Follow the Go Code Style.
-	•	Write tests for new features.
-	•	Ensure code passes golangci-lint checks.
-
-License
-
-This project is licensed under the Apache License 2.0.
-
-Contact
-
-For questions or issues, please open an issue in the GitHub repository.
+For questions or issues, please open an issue in the [GitHub repository](https://github.com/siyul-park/uniflow-operator/issues).

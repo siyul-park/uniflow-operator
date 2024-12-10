@@ -7879,7 +7879,7 @@ spec:
           status:
             description: RevisionStatus defines the observed state of Revision
             properties:
-              LastCreatedServingNames:
+              lastBinedNamespases:
                 additionalProperties:
                   type: string
                 type: object
@@ -7887,6 +7887,12 @@ spec:
                 type: string
               lastCreatedServiceName:
                 type: string
+              lastCreatedServingNames:
+                additionalProperties:
+                  type: string
+                type: object
+            required:
+            - lastBinedNamespases
             type: object
         type: object
     served: true
