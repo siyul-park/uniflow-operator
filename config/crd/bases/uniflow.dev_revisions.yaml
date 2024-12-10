@@ -7891,8 +7891,6 @@ spec:
                 additionalProperties:
                   type: string
                 type: object
-            required:
-            - lastBinedNamespases
             type: object
         type: object
     served: true
