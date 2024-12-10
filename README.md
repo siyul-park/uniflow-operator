@@ -1,114 +1,146 @@
-# uniflow-operator
-// TODO(user): Add simple overview of use/purpose
+Uniflow Operator
 
-## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+The Uniflow Operator is a Kubernetes controller designed for managing Service and Revision resources. It tracks workflow changes and ensures seamless deployment of serverless workloads using Knative. This operator simplifies the orchestration and versioning of workflows in dynamic environments.
 
-## Getting Started
+Features
 
-### Prerequisites
-- go version v1.21.0+
-- docker version 17.03+.
-- kubectl version v1.11.3+.
-- Access to a Kubernetes v1.11.3+ cluster.
+Dynamic Revision Management
 
-### To Deploy on the cluster
-**Build and push your image to the location specified by `IMG`:**
+	•	Automatically creates and manages Revision resources based on Service updates.
+	•	Supports version control for services and workflows.
 
-```sh
-make docker-build docker-push IMG=<some-registry>/uniflow-operator:tag
-```
+Efficient Resource Cleanup
 
-**NOTE:** This image ought to be published in the personal registry you specified.
-And it is required to have access to pull the image from the working environment.
-Make sure you have the proper permission to the registry if the above commands don’t work.
+	•	Automatically removes outdated Revisions while retaining the latest version.
+	•	Ensures optimal resource utilization.
 
-**Install the CRDs into the cluster:**
+Knative Integration
 
-```sh
-make install
-```
+	•	Leverages Knative Serving to provide serverless deployment for workflows.
+	•	Supports real-time and scalable workload management.
 
-**Deploy the Manager to the cluster with the image specified by `IMG`:**
+Event-Driven Reconciliation
 
-```sh
-make deploy IMG=<some-registry>/uniflow-operator:tag
-```
+	•	Listens to workflow changes and dynamically updates Kubernetes resources.
+	•	Ensures system state aligns with user-defined specifications.
 
-> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
-privileges or be logged in as admin.
+Getting Started
 
-**Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
+Prerequisites
 
-```sh
-kubectl apply -k config/samples/
-```
+	•	Kubernetes 1.24 or later
+	•	Knative Serving installed
+	•	Helm 3 (optional for installation)
 
->**NOTE**: Ensure that the samples has default values to test it out.
+Installation
 
-### To Uninstall
-**Delete the instances (CRs) from the cluster:**
+1. Clone the Repository
 
-```sh
-kubectl delete -k config/samples/
-```
+git clone https://github.com/siyul-park/uniflow-operator.git
+cd uniflow-operator
 
-**Delete the APIs(CRDs) from the cluster:**
+2. Deploy Custom Resource Definitions (CRDs)
 
-```sh
-make uninstall
-```
+kubectl apply -f config/crd/bases
 
-**UnDeploy the controller from the cluster:**
+3. Deploy the Controller
 
-```sh
-make undeploy
-```
+kubectl apply -f config/manager
 
-## Project Distribution
+4. Verify Deployment
 
-Following are the steps to build the installer and distribute this project to users.
+kubectl get pods -n uniflow-system
 
-1. Build the installer for the image built and published in the registry:
+Usage
 
-```sh
-make build-installer IMG=<some-registry>/uniflow-operator:tag
-```
+Define a Service
 
-NOTE: The makefile target mentioned above generates an 'install.yaml'
-file in the dist directory. This file contains all the resources built
-with Kustomize, which are necessary to install this project without
-its dependencies.
+Create a Service manifest:
 
-2. Using the installer
+apiVersion: uniflow.dev/v1
+kind: Service
+metadata:
+  name: example-service
+spec:
+  template:
+    metadata:
+      labels:
+        app: example
+    spec:
+      containers:
+        - name: example-container
+          image: example-image:latest
 
-Users can just run kubectl apply -f <URL for YAML BUNDLE> to install the project, i.e.:
+Apply the configuration:
 
-```sh
-kubectl apply -f https://raw.githubusercontent.com/<org>/uniflow-operator/<tag or branch>/dist/install.yaml
-```
+kubectl apply -f service.yaml
 
-## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
+Monitor Revisions
 
-**NOTE:** Run `make help` for more information on all potential `make` targets
+Check created Revisions:
 
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
+kubectl get revisions -n <namespace>
 
-## License
+Inspect Service status:
 
-Copyright 2024.
+kubectl describe service example-service
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+Development
 
-    http://www.apache.org/licenses/LICENSE-2.0
+Local Development
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+	1.	Install Dependencies
 
+go mod tidy
+
+
+	2.	Run the Controller
+
+make run
+
+
+	3.	Apply Resources Locally
+
+kubectl apply -f examples/service.yaml
+
+
+
+Run Tests
+
+make test
+
+Contributing
+
+Steps to Contribute
+
+	1.	Fork the repository.
+	2.	Create a feature branch:
+
+git checkout -b feature/my-feature
+
+
+	3.	Commit your changes:
+
+git commit -m "Add my feature"
+
+
+	4.	Push the branch:
+
+git push origin feature/my-feature
+
+
+	5.	Create a pull request in the repository.
+
+Code Standards
+
+	•	Follow the Go Code Style.
+	•	Write tests for new features.
+	•	Ensure code passes golangci-lint checks.
+
+License
+
+This project is licensed under the Apache License 2.0.
+
+Contact
+
+For questions or issues, please open an issue in the GitHub repository.
