@@ -25,7 +25,6 @@ type SpecReconciler struct {
 	client.Client
 	Scheme         *runtime.Scheme
 	NamespacedName types.NamespacedName
-	namespaces     map[uuid.UUID]string
 	done           chan struct{}
 	mu             sync.Mutex
 }
@@ -90,9 +89,17 @@ func (r *SpecReconciler) Reconcile(ctx context.Context, id uuid.UUID) error {
 		return err
 	}
 
-	delete(r.namespaces, id)
+	if revision.Status.LastBinedNamspases == nil {
+		revision.Status.LastBinedNamspases = make(map[string]string)
+	}
+	delete(revision.Status.LastBinedNamspases, id.String())
 	for _, spc := range specs {
-		r.namespaces[spc.GetID()] = spc.GetNamespace()
+		revision.Status.LastBinedNamspases[spc.GetID().String()] = spc.GetNamespace()
+	}
+
+	if err := r.Client.Update(ctx, &revision); err != nil {
+		logger.Error(err, "Failed to update Revision")
+		return err
 	}
 
 	return r.reflectService(ctx, revision)
@@ -160,13 +167,18 @@ func (r *SpecReconciler) start(ctx context.Context) (*spec.Stream, error) {
 		return nil, err
 	}
 
-	r.namespaces = make(map[uuid.UUID]string)
+	revision.Status.LastBinedNamspases = make(map[string]string)
 	for _, spc := range specs {
-		r.namespaces[spc.GetID()] = spc.GetNamespace()
+		revision.Status.LastBinedNamspases[spc.GetID().String()] = spc.GetNamespace()
+	}
+
+	if err := r.Client.Update(ctx, &revision); err != nil {
+		logger.Error(err, "Failed to update Revision")
+		return nil, err
 	}
 
 	if err := r.reflectService(ctx, revision); err != nil {
-		logger.Error(err, "Failed to setup services")
+		logger.Error(err, "Failed to setup Services")
 		return nil, err
 	}
 
@@ -176,7 +188,7 @@ func (r *SpecReconciler) start(ctx context.Context) (*spec.Stream, error) {
 // reflectService manages service setup and cleanup.
 func (r *SpecReconciler) reflectService(ctx context.Context, revision uniflowdevv1.Revision) error {
 	var namespaces []string
-	for _, namespace := range r.namespaces {
+	for _, namespace := range revision.Status.LastBinedNamspases {
 		if !slices.Contains(namespaces, namespace) {
 			namespaces = append(namespaces, namespace)
 		}
