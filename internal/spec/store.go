@@ -16,7 +16,7 @@ import (
 
 // Store interacts with a remote specification store.
 type Store struct {
-	host string
+	url string
 }
 
 // Stream manages a WebSocket connection for receiving events.
@@ -43,13 +43,28 @@ const (
 )
 
 // NewStore initializes a new Store instance.
-func NewStore(host string) *Store {
-	return &Store{host: host}
+func NewStore(url string) *Store {
+	return &Store{url: url}
 }
 
 // Watch opens a WebSocket connection to monitor specification changes.
 func (s *Store) Watch(ctx context.Context) (*Stream, error) {
-	conn, err := websocket.Dial(fmt.Sprintf("ws://%s/v1/specs?watch=true", s.host), "", s.host)
+	parse, err := url.Parse(s.url)
+	if err != nil {
+		return nil, err
+	}
+
+	parse.Path = "/v1/specs"
+	parse.RawQuery = "watch=true"
+
+	if parse.Scheme == "http" {
+		parse.Scheme = "ws"
+	}
+	if parse.Scheme == "https" {
+		parse.Scheme = "wss"
+	}
+
+	conn, err := websocket.Dial(parse.String(), "", s.url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to establish WebSocket connection: %w", err)
 	}
@@ -81,7 +96,7 @@ func (s *Store) Load(ctx context.Context, specs ...Spec) ([]Spec, error) {
 		}
 	}
 
-	resp, err := s.get(ctx, &url.URL{Scheme: "http", Host: s.host, Path: "/v1/specs", RawQuery: query.Encode()})
+	resp, err := s.get(ctx, "/v1/specs", query)
 	if err != nil {
 		return nil, err
 	}
@@ -104,8 +119,16 @@ func (s *Store) Load(ctx context.Context, specs ...Spec) ([]Spec, error) {
 }
 
 // get sends an HTTP GET request to the specified URL.
-func (s *Store) get(ctx context.Context, url *url.URL) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url.String(), nil)
+func (s *Store) get(ctx context.Context, path string, query url.Values) (*http.Response, error) {
+	parse, err := url.ParseRequestURI(s.url)
+	if err != nil {
+		return nil, err
+	}
+
+	parse.Path = path
+	parse.RawQuery = query.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parse.String(), nil)
 	if err != nil {
 		return nil, err
 	}

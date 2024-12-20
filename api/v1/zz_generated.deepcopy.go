@@ -109,8 +109,8 @@ func (in *RevisionStatus) DeepCopyInto(out *RevisionStatus) {
 			(*out)[key] = val
 		}
 	}
-	if in.LastBinedNamspases != nil {
-		in, out := &in.LastBinedNamspases, &out.LastBinedNamspases
+	if in.LastBindNamespaces != nil {
+		in, out := &in.LastBindNamespaces, &out.LastBindNamespaces
 		*out = make(map[string]string, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val

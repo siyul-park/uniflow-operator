@@ -7879,7 +7879,9 @@ spec:
           status:
             description: RevisionStatus defines the observed state of Revision
             properties:
-              lastBinedNamespases:
+              lastBindEndpoint:
+                type: string
+              lastBindNamespaces:
                 additionalProperties:
                   type: string
                 type: object

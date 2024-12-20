@@ -48,7 +48,8 @@ type RevisionStatus struct {
 	LastCreatedDeploymentName string            `json:"lastCreatedDeploymentName,omitempty"`
 	LastCreatedServiceName    string            `json:"lastCreatedServiceName,omitempty"`
 	LastCreatedServingNames   map[string]string `json:"lastCreatedServingNames,omitempty"`
-	LastBinedNamspases        map[string]string `json:"lastBinedNamespases,omitempty"`
+	LastBindEndpoint          string            `json:"lastBindEndpoint,omitempty"`
+	LastBindNamespaces        map[string]string `json:"lastBindNamespaces,omitempty"`
 }
 
 // +kubebuilder:object:root=true

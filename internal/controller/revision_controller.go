@@ -38,10 +38,15 @@ import (
 // RevisionReconciler reconciles a Revision object
 type RevisionReconciler struct {
 	client.Client
-	Scheme          *runtime.Scheme
-	specReconcilers map[types.NamespacedName]*SpecReconciler
+	Scheme     *runtime.Scheme
+	reflectors map[types.NamespacedName]*Reflector
 }
 
+// +kubebuilder:rbac:groups=uniflow.dev,resources=revisions,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=uniflow.dev,resources=revisions/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=uniflow.dev,resources=revisions/finalizers,verbs=update
+
+// Load is a method that loads and manages the revisions and their corresponding reflectors.
 func (r *RevisionReconciler) Load(ctx context.Context) error {
 	logger := log.FromContext(ctx)
 
@@ -57,7 +62,8 @@ func (r *RevisionReconciler) Load(ctx context.Context) error {
 			return err
 		}
 	}
-	for namespacedName, specReconciler := range r.specReconcilers {
+
+	for namespacedName, reflector := range r.reflectors {
 		exists := false
 		for _, rev := range revisionList.Items {
 			if (types.NamespacedName{Namespace: rev.Namespace, Name: rev.Name}) == namespacedName {
@@ -67,8 +73,8 @@ func (r *RevisionReconciler) Load(ctx context.Context) error {
 		}
 
 		if !exists {
-			delete(r.specReconcilers, namespacedName)
-			if err := specReconciler.Close(); err != nil {
+			delete(r.reflectors, namespacedName)
+			if err := reflector.Close(); err != nil {
 				return err
 			}
 		}
@@ -76,10 +82,6 @@ func (r *RevisionReconciler) Load(ctx context.Context) error {
 
 	return nil
 }
-
-// +kubebuilder:rbac:groups=uniflow.dev,resources=revisions,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=uniflow.dev,resources=revisions/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=uniflow.dev,resources=revisions/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -135,6 +137,8 @@ func (r *RevisionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	revision.Status.LastCreatedServiceName = service.Name
+	revision.Status.LastBindEndpoint = r.discovery(&service)
+
 	if err := r.Status().Update(ctx, &revision); err != nil {
 		logger.Error(err, "Failed to update Revision status")
 		return ctrl.Result{}, err
@@ -181,22 +185,22 @@ func (r *RevisionReconciler) createDeployment(revision uniflowdevv1.Revision) (a
 				},
 			},
 			Labels: map[string]string{
-				"app.kubernetes.io/part-of":  kinds[0].Group + "-" + revision.Name,
-				"app.kubernetes.io/instance": kinds[0].Group + "-" + revision.Name + "-system",
+				"app.kubernetes.io/part-of":  revision.Name,
+				"app.kubernetes.io/instance": revision.Name + "-system",
 			},
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: ptr.To(int32(1)),
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"app.kubernetes.io/instance": kinds[0].Group + "-" + revision.Name + "-system",
+					"app.kubernetes.io/instance": revision.Name + "-system",
 				},
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						"app.kubernetes.io/part-of":  kinds[0].Group + "-" + revision.Name,
-						"app.kubernetes.io/instance": kinds[0].Group + "-" + revision.Name + "-system",
+						"app.kubernetes.io/part-of":  revision.Name,
+						"app.kubernetes.io/instance": revision.Name + "-system",
 					},
 				},
 				Spec: podSpec,
@@ -224,13 +228,13 @@ func (r *RevisionReconciler) createService(revision uniflowdevv1.Revision) (core
 				},
 			},
 			Labels: map[string]string{
-				"app.kubernetes.io/part-of":  kinds[0].Group + "-" + revision.Name,
-				"app.kubernetes.io/instance": kinds[0].Group + "-" + revision.Name + "-system",
+				"app.kubernetes.io/part-of":  revision.Name,
+				"app.kubernetes.io/instance": revision.Name + "-system",
 			},
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{
-				"app.kubernetes.io/instance": kinds[0].Group + "-" + revision.Name + "-system",
+				"app.kubernetes.io/instance": revision.Name + "-system",
 			},
 			Ports: []corev1.ServicePort{
 				{
@@ -298,18 +302,18 @@ func (r *RevisionReconciler) cleanupServices(ctx context.Context, revision unifl
 func (r *RevisionReconciler) listen(revision uniflowdevv1.Revision) error {
 	namespacedName := types.NamespacedName{Namespace: revision.Namespace, Name: revision.Name}
 
-	if r.specReconcilers == nil {
-		r.specReconcilers = make(map[types.NamespacedName]*SpecReconciler)
+	if r.reflectors == nil {
+		r.reflectors = make(map[types.NamespacedName]*Reflector)
 	}
 
-	specReconciler, ok := r.specReconcilers[namespacedName]
+	reflector, ok := r.reflectors[namespacedName]
 	if !ok {
-		specReconciler = &SpecReconciler{
+		reflector = &Reflector{
 			Client:         r.Client,
 			Scheme:         r.Scheme,
 			NamespacedName: namespacedName,
 		}
-		r.specReconcilers[namespacedName] = specReconciler
+		r.reflectors[namespacedName] = reflector
 
 		go func() {
 			ctx := context.Background()
@@ -320,8 +324,8 @@ func (r *RevisionReconciler) listen(revision uniflowdevv1.Revision) error {
 			for {
 				select {
 				case <-ticker.C:
-					_ = specReconciler.Listen(ctx)
-				case <-specReconciler.Done():
+					_ = reflector.Listen(ctx)
+				case <-reflector.Done():
 					return
 				}
 			}
@@ -329,8 +333,8 @@ func (r *RevisionReconciler) listen(revision uniflowdevv1.Revision) error {
 	}
 
 	if revision.DeletionTimestamp != nil {
-		delete(r.specReconcilers, namespacedName)
-		if err := specReconciler.Close(); err != nil {
+		delete(r.reflectors, namespacedName)
+		if err := reflector.Close(); err != nil {
 			return err
 		}
 	}
@@ -343,4 +347,11 @@ func (r *RevisionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&uniflowdevv1.Revision{}).
 		Complete(r)
+}
+
+func (r *RevisionReconciler) discovery(svc *corev1.Service) string {
+	if svc == nil || svc.Name == "" || svc.Namespace == "" || len(svc.Spec.Ports) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%s.%s.svc.cluster.local:%d", svc.Name, svc.Namespace, svc.Spec.Ports[0].Port)
 }
