@@ -25,6 +25,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/api/validation"
+	"knative.dev/networking/pkg/apis/networking"
 	"knative.dev/pkg/apis"
 	"knative.dev/pkg/kmap"
 	"knative.dev/pkg/kmp"
@@ -66,6 +67,7 @@ func (rts *RevisionTemplateSpec) Validate(ctx context.Context) *apis.FieldError 
 	errs := rts.Spec.Validate(apis.WithinSpec(ctx)).ViaField("spec")
 	errs = errs.Also(autoscaling.ValidateAnnotations(ctx, config.FromContextOrDefaults(ctx).Autoscaler,
 		rts.GetAnnotations()).ViaField("metadata.annotations"))
+	errs = errs.Also(networking.ValidateAnnotations(rts.GetAnnotations()).ViaField("metadata.annotations"))
 
 	// If the RevisionTemplateSpec has a name specified, then check that
 	// it follows the requirements on the name.
@@ -193,10 +195,8 @@ func validateQueueSidecarResourceAnnotations(m map[string]string) *apis.FieldErr
 		value, err := strconv.ParseFloat(v, 64)
 		if err != nil {
 			errs = errs.Also(apis.ErrInvalidValue(v, apis.CurrentField).ViaKey(k))
-		} else {
-			if value < 0.1 || value > 100 {
-				errs = errs.Also(apis.ErrOutOfBoundsValue(value, 0.1, 100.0, apis.CurrentField).ViaKey(k))
-			}
+		} else if value < 0.1 || value > 100 {
+			errs = errs.Also(apis.ErrOutOfBoundsValue(value, 0.1, 100.0, apis.CurrentField).ViaKey(k))
 		}
 	}
 	annoKeys := []kmap.KeyPriority{

@@ -124,7 +124,7 @@ func (rs *RouteStatus) MarkRevisionTargetTrafficError(reason, msg string) {
 }
 
 // MarkConfigurationNotReady marks the RouteConditionAllTrafficAssigned
-// condition to indiciate the Revision is not yet ready.
+// condition to indicate the Revision is not yet ready.
 func (rs *RouteStatus) MarkConfigurationNotReady(name string) {
 	routeCondSet.Manage(rs).MarkUnknown(RouteConditionAllTrafficAssigned,
 		"RevisionMissing",
@@ -140,7 +140,7 @@ func (rs *RouteStatus) MarkConfigurationFailed(name string) {
 }
 
 // MarkRevisionNotReady marks the RouteConditionAllTrafficAssigned condition to
-// indiciate the Revision is not yet ready.
+// indicate the Revision is not yet ready.
 func (rs *RouteStatus) MarkRevisionNotReady(name string) {
 	routeCondSet.Manage(rs).MarkUnknown(RouteConditionAllTrafficAssigned,
 		"RevisionMissing",
@@ -148,11 +148,28 @@ func (rs *RouteStatus) MarkRevisionNotReady(name string) {
 }
 
 // MarkRevisionFailed marks the RouteConditionAllTrafficAssigned condition to
-// indiciate the Revision has failed.
+// indicate the Revision has failed.
 func (rs *RouteStatus) MarkRevisionFailed(name string) {
 	routeCondSet.Manage(rs).MarkFalse(RouteConditionAllTrafficAssigned,
 		"RevisionMissing",
 		"Revision %q failed to become ready.", name)
+}
+
+// MarkRevisionNotOwned marks the RouteConditionAllTrafficAssigned condition
+// to indicate the Revision does not belong to the expected Service.
+func (rs *RouteStatus) MarkRevisionNotOwned(revisionName, expectedService, actualService string) {
+	if actualService == "" {
+		// Revision was created from a standalone Configuration (no known service)
+		routeCondSet.Manage(rs).MarkFalse(RouteConditionAllTrafficAssigned,
+			"RevisionNotOwned",
+			"Revision %q does not belong to Service %q.", revisionName, expectedService)
+	} else {
+		// Revision belongs to a different Service
+		routeCondSet.Manage(rs).MarkFalse(RouteConditionAllTrafficAssigned,
+			"RevisionNotOwned",
+			"Revision %q belongs to Service %q, not Service %q.",
+			revisionName, actualService, expectedService)
+	}
 }
 
 // MarkMissingTrafficTarget marks the RouteConditionAllTrafficAssigned
