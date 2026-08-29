@@ -7,8 +7,8 @@ require (
 	github.com/onsi/ginkgo/v2 v2.20.0
 	github.com/onsi/gomega v1.34.1
 	golang.org/x/net v0.31.0
-	k8s.io/api v0.30.3
-	k8s.io/apimachinery v0.30.3
+	k8s.io/api v0.37.0
+	k8s.io/apimachinery v0.37.0
 	k8s.io/client-go v0.30.3
 	k8s.io/utils v0.0.0-20241104163129-6fe5fd82f078
 	knative.dev/serving v0.43.0
