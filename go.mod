@@ -1,6 +1,6 @@
 module github.com/siyul-park/uniflow-operator
 
-go 1.23.3
+go 1.25
 
 require (
 	github.com/google/uuid v1.6.0
@@ -10,7 +10,7 @@ require (
 	k8s.io/api v0.30.3
 	k8s.io/apimachinery v0.30.3
 	k8s.io/client-go v0.30.3
-	k8s.io/utils v0.0.0-20241104163129-6fe5fd82f078
+	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3
 	knative.dev/serving v0.43.0
 	sigs.k8s.io/controller-runtime v0.18.5
 )
